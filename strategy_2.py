@@ -5,8 +5,6 @@ import time
 io='.\data\\'
 holding_list={}
 sold_earn_list={}
-highlevel_list=[130+2*i for i in range(10)]
-lowlevel_list=[110+2*i for i in range(10)]
 
 
 def read_csv_file(filename):
@@ -16,7 +14,7 @@ def read_csv_file(filename):
     nrow=len(csv_data.index)
     ncol=len(csv_data.iloc[1,])
 
-    # print(ncol)
+    #print(ncol)
     # 删除空列
     # zero_col=[]
     # for col in range(ncol):
@@ -51,7 +49,7 @@ def calc_earning(holding_list):
 
 def if_buy(date):
     global holding_list
-    global purchase_info_str
+    global purchase_info_str,rating_list
 
     # 确定是否买入
     for company in price_data.columns:
@@ -62,25 +60,25 @@ def if_buy(date):
         if company in holding_list:
             continue
 
-        # 无视评级买入
         # 价格低于125且溢价率低于25
         price = price_data.loc[date][company]
         premium = premium_data.loc[date][company]
         # price 为0 认为是bond已到期，premium不作为判断依据
-        need_rate1=rating_list['AAA']+rating_list['AAA-']+rating_list['AA+']+rating_list['AA']+rating_list['AA-']
+        # 需要的评级
+        need_rate1=rating_list['AAA']+rating_list['AAA-']+rating_list['AA+']+rating_list['AA']
         need_rate2=rating_list['AAA']+rating_list['AAA-']+rating_list['AA+']
 
-        # 尴尬，还是做成无视评级了
-        if  price < lowlevel and price != 0:
+        if company in need_rate1 and price < 125 and price != 0:
             if premium < 25 :
                 purchase_info_str += 'buy:{}-price:{}-low price;'.format(company, price)
                 buy_flag=1
 
         # AAA 评级买入
         # 到期收益率高于1.5且转股溢价率低于40
+        # if company in need_rate1 and price < 125 and price != 0:
         elif company in need_rate2 and YTM_data.loc[date][company] > 1.5 and price != 0:
             if premium < 40 :
-                purchase_info_str += 'buy:{}-price:{}-AAA;'.format(company, price)
+                purchase_info_str += 'buy:{}-price:{}-hige_CR;'.format(company, price)
                 buy_flag = 1
 
         # 判断是否已满
@@ -88,7 +86,7 @@ def if_buy(date):
             # 信息输出字符串
             # print('\nbuy--->' + company + '    ', end='')
             holding_list[company] = [price, -1]
-        elif buy_flag and len(holding_list)>=10:
+        elif len(holding_list)>=10:
             purchase_info_str+='FULL_purchase_fail'
 
 
@@ -112,7 +110,7 @@ def if_sell(date):
         else:
             holding_list[company][1]=now_price
             # 若价格超过140或溢价率高于40
-            if now_price>highlevel or  premium>40 :
+            if now_price>140 or  premium>40 :
                 # print('\n===price or premium raised!!       ',end='')
                 # print('sale--->'+company+'   ')
                 sale_info_str += 'sell:{}-price:{}-premium;'.format(company, now_price)
@@ -127,10 +125,17 @@ def if_sell(date):
         sold_earn_list[company]=(1000/float(holding_list[company][0])*float(holding_list[company][1]))-1000
         holding_list.pop(company)
 
-
 # 只是想把他们藏起来
 if True:
     t0 = time.time()
+
+    # 初始化输出文件
+    output_file='result策略2.csv'
+    f=open(output_file,'w')
+    title=['日期','总收益','持有收益','历史收益','买入情况','卖出情况']+['股票','买入价','现价']*10
+    f.write(','.join(title)+'\n')
+    f.close()
+
     # 读取数据文件
     price_data=read_csv_file('price.csv')
     # balance_data=read_csv_file('balance.csv')
@@ -138,9 +143,9 @@ if True:
     premium_data=read_csv_file('premium.csv')
     # 读取评级文件
     rating_data=pd.read_csv('./data/rating.csv',index_col=0)
-    # 由于评级文件的title与price文件不一致，修改文件title
+    #由于评级文件的title与price文件不一致，修改文件title
     rating_data.columns = price_data.columns
-    # 用来纪录各个公司评级的文件
+
     rating_list = {}
     for company in rating_data.columns:
         rating = rating_data.loc['rating'][company]
@@ -149,41 +154,33 @@ if True:
         else:
             rating_list[rating] += [company]
 
-for highlevel in highlevel_list:
-    for lowlevel in lowlevel_list:
-        print('\nLow:{}   High:{}'.format(lowlevel,highlevel))
-        # 初始化输出文件
-        output_file='./result/result初始策略修正{}_{}.csv'.format(lowlevel,highlevel)
-        f=open(output_file,'w')
-        title=['日期','总收益','持有收益','历史收益','买入情况','卖出情况']+['股票','买入价','现价']*10
-        f.write(','.join(title)+'\n')
-        f.close()
-        # 这样子会快一点，整个添加完之后再关
-        f=open(output_file,'a')
 
-        for date in price_data.index:
-            tot_time=time.time()-t0
-            print('\r'+str(date)[:10]+'      {} min : {} sec'.format(int(tot_time/60),int(tot_time%60)),end='')
-            output_list=[]
-            output_list.append(str(date)[:10])
+for date in price_data.index:
+    tot_time=time.time()-t0
+    print(str(date)[:10]+'      {} min : {} sec'.format(int(tot_time/60),int(tot_time%60)))
+    output_list=[]
+    output_list.append(str(date)[:10])
 
-            purchase_info_str=''
-            sale_info_str=''
-            if_buy(date)
-            if_sell(date)
-            # 计算收益，当期已卖出的计入历史收益
-            calc_earning(holding_list)
-            # 输出到文件
-            # 买入卖出情况
-            output_list.extend([purchase_info_str,sale_info_str])
-            # 持有的债券信息
-            for item in holding_list:
-                output_list.append(str(item))
-                output_list.extend(holding_list[item])
-            for i in range(len(output_list)):
-                output_list[i]=str(output_list[i])
-            f.write(','.join(output_list)+'\n')
-        f.close()
+    purchase_info_str=''
+    sale_info_str=''
+    if_buy(date)
+    if_sell(date)
+
+    # 计算收益，当期已卖出的计入历史收益
+    calc_earning(holding_list)
+
+    # 输出到文件
+    # 买入卖出情况
+    output_list.extend([purchase_info_str,sale_info_str])
+    # 持有的债券信息
+    for item in holding_list:
+        output_list.append(str(item))
+        output_list.extend(holding_list[item])
+    f=open(output_file,'a')
+    for i in range(len(output_list)):
+        output_list[i]=str(output_list[i])
+    f.write(','.join(output_list)+'\n')
+    f.close()
 
 
 
